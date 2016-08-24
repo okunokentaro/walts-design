@@ -33,6 +33,12 @@ class Dispatcher {
       const publisher = new Subject();
       publisher.subscribe((state) => {
         const result = actions[i](state);
+        if (isPromise(result)) {
+          result.then((resultSt) => {
+            this.subject2.next(resultSt);
+          });
+          return;
+        }
         this.subject2.next(result);
       });
       this.subject.next(publisher);
@@ -60,7 +66,7 @@ class Store {
     this._observable = new BehaviorSubject(this.stateRef);
 
     this.dispatcher.subscribe((publisher) => {
-      publisher.next(this.stateRef);
+      publisher.next(Object.assign({}, this.stateRef));
     });
     this.dispatcher.subscribe2((result) => {
       this.stateRef = Object.assign({}, this.stateRef, result);
@@ -90,7 +96,11 @@ dispatcher.emitAll([
     return {a: st.a + 1};
   },
   (st) => {
-    return {a: st.a + 1};
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({a: st.a + 1});
+      }, 1000);
+    });
   },
   (st) => {
     return {a: st.a + 1};
