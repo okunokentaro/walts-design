@@ -16,8 +16,9 @@ function isPromise(v) {
 
 class Dispatcher {
   constructor() {
-    this.subject = new Subject();
-    this.subject2 = new Subject();
+    this.begin = new Subject();
+    this.continue = new Subject();
+    this.complete = new Subject();
   }
 
   emit(action) {
@@ -29,30 +30,46 @@ class Dispatcher {
   }
 
   emitAll(actions) {
-    actions.forEach((action, i) => {
-      const publisher = new Subject();
-      publisher.subscribe((state) => {
+    const queueStack = actions.map((action, i) => {
+      const actionQueue = new Subject();
+      actionQueue.subscribe((state) => {
         const result = actions[i](state);
         if (isPromise(result)) {
           result.then((resultSt) => {
-            this.subject2.next(resultSt);
+            if (!queueStack[i + 1]) {
+              this.continue.next({result: resultSt, queue: this.complete});
+            }
+            this.continue.next({result: resultSt, queue: queueStack[i + 1]});
           });
           return;
         }
-        this.subject2.next(result);
+        if (!queueStack[i + 1]) {
+          this.continue.next({result, queue: this.complete});
+        }
+        this.continue.next({result, queue: queueStack[i + 1]});
       });
-      this.subject.next(publisher);
+
+      return actionQueue;
+    });
+
+    this.begin.next(queueStack[0]);
+  }
+
+  beginSubscribe(observer) {
+    this.begin.subscribe((actionQueue) => {
+      observer(actionQueue);
     });
   }
 
-  subscribe(observer) {
-    this.subject.subscribe((publisher) => {
-      observer(publisher);
+  continueSubscribe(observer) {
+    this.continue.subscribe((resultState) => {
+      observer(resultState);
     });
   }
-  subscribe2(observer) {
-    this.subject2.subscribe((result) => {
-      observer(result);
+
+  completeSubscribe(observer) {
+    this.complete.subscribe((resultState) => {
+      observer(resultState);
     });
   }
 }
@@ -65,11 +82,15 @@ class Store {
     this.stateRef    = Object.assign({}, initState);
     this._observable = new BehaviorSubject(this.stateRef);
 
-    this.dispatcher.subscribe((publisher) => {
-      publisher.next(Object.assign({}, this.stateRef));
+    this.dispatcher.beginSubscribe((actionQueue) => {
+      actionQueue.next(Object.assign({}, this.stateRef));
     });
-    this.dispatcher.subscribe2((result) => {
-      this.stateRef = Object.assign({}, this.stateRef, result);
+    this.dispatcher.continueSubscribe((params) => {
+      this.stateRef = Object.assign({}, this.stateRef, params.result);
+      params.queue.next(this.stateRef);
+    });
+    this.dispatcher.completeSubscribe((params) => {
+      this.stateRef = Object.assign({}, this.stateRef, params.result);
       this._observable.next(this.stateRef);
     });
   }
@@ -93,16 +114,20 @@ store.observable.subscribe(s => console.log(s));
 console.log(2);
 dispatcher.emitAll([
   (st) => {
+    console.log(10);
     return {a: st.a + 1};
   },
   (st) => {
     return new Promise((resolve) => {
+      console.log(20);
       setTimeout(() => {
+        console.log(25);
         resolve({a: st.a + 1});
       }, 1000);
     });
   },
   (st) => {
+    console.log(30);
     return {a: st.a + 1};
   }
 ]);
