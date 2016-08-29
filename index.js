@@ -3,8 +3,13 @@ import { isPromise as rxIsPromise } from 'rxjs/util/isPromise';
 
 const state = {
   a: 1,
-  b: 'hello'
+  b: 'hello',
+  c: 1
 };
+
+function lazy(argFunc) {
+  return new Promise(argFunc);
+}
 
 function isActions(v) {
   return Array.isArray(v);
@@ -36,8 +41,13 @@ class Dispatcher {
         const result = actions[i](state);
         if (isPromise(result)) {
           result.then((resultSt) => {
+            if (typeof resultSt === 'function') {
+              this.emit(resultSt);
+              return;
+            }
             if (!queueStack[i + 1]) {
               this.continue.next({result: resultSt, queue: this.complete});
+              return;
             }
             this.continue.next({result: resultSt, queue: queueStack[i + 1]});
           });
@@ -45,6 +55,7 @@ class Dispatcher {
         }
         if (!queueStack[i + 1]) {
           this.continue.next({result, queue: this.complete});
+          return;
         }
         this.continue.next({result, queue: queueStack[i + 1]});
       });
@@ -112,25 +123,67 @@ store.observable.subscribe(s => console.log(s));
 // });
 
 console.log(2);
-dispatcher.emitAll([
-  (st) => {
+// dispatcher.emitAll([
+//   (st) => {
+//     console.log(10);
+//     return {a: st.a + 1};
+//   },
+//   (st) => {
+//     return new Promise((resolve) => {
+//       console.log(20);
+//       setTimeout(() => {
+//         console.log(25);
+//         resolve({a: st.a + 1});
+//       }, 1000);
+//     });
+//   },
+//   (st) => {
+//     console.log(30);
+//     return {a: st.a + 1};
+//   }
+// ]);
+
+dispatcher.emit((st) => {
+  return new Promise((resolve) => {
     console.log(10);
-    return {a: st.a + 1};
-  },
-  (st) => {
-    return new Promise((resolve) => {
+    setTimeout(() => {
       console.log(20);
-      setTimeout(() => {
-        console.log(25);
-        resolve({a: st.a + 1});
-      }, 1000);
-    });
-  },
-  (st) => {
+      resolve({a: st.a + 1});
+    }, 1000);
+  });
+});
+dispatcher.emit((st) => {
+  return new Promise((resolve) => {
     console.log(30);
-    return {a: st.a + 1};
-  }
-]);
+    setTimeout(() => {
+      console.log(40);
+      resolve({a: st.a + 1});
+    }, 500);
+  });
+});
+
+dispatcher.emit((st) => {
+  return lazy((call) => {
+    console.log(50);
+    setTimeout(() => {
+      console.log(60);
+      const value = 3;
+      call((st) => {
+        return {c: st.c / value}
+      });
+    }, 1000);
+  });
+});
+dispatcher.emit((st) => {
+  return new Promise((resolve) => {
+    console.log(70);
+    setTimeout(() => {
+      console.log(80);
+      resolve({c: st.c + 5});
+    }, 500);
+  });
+});
+
 //
 // console.log(3);
 // dispatcher.emit((st) => {
