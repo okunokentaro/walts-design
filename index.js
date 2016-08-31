@@ -21,65 +21,70 @@ function isPromise(v) {
 
 class Dispatcher {
   constructor() {
-    this.begin = new Subject();
-    this.continue = new Subject();
-    this.complete = new Subject();
+    this.begin$ = new Subject();
+    this.continue$ = new Subject();
+    this.complete$ = new Subject();
   }
 
   emit(action) {
     if (isActions(action)) {
-      this.emitAll(action);
-      return;
+      return this.emitAll(action);
     }
-    this.emitAll([action]);
+    return this.emitAll([action]);
   }
 
   emitAll(actions) {
-    const queueStack = actions.map((action, i) => {
-      const actionQueue = new Subject();
-      actionQueue.subscribe((state) => {
-        const result = actions[i](state);
-        if (isPromise(result)) {
-          result.then((resultSt) => {
-            if (typeof resultSt === 'function') {
-              this.emit(resultSt);
-              return;
-            }
-            if (!queueStack[i + 1]) {
-              this.continue.next({result: resultSt, queue: this.complete});
-              return;
-            }
-            this.continue.next({result: resultSt, queue: queueStack[i + 1]});
-          });
-          return;
-        }
-        if (!queueStack[i + 1]) {
-          this.continue.next({result, queue: this.complete});
-          return;
-        }
-        this.continue.next({result, queue: queueStack[i + 1]});
+    return new Promise((resolve) => {
+      const queueStack = actions.map((action, i) => {
+        const actionQueue = new Subject();
+        actionQueue.subscribe((state) => {
+          const result = actions[i](state);
+          const nextQueue = queueStack[i + 1]
+            ? queueStack[i + 1]
+            : {next: (v) => { resolve(v); this.complete$.next(v); }}
+          ;
+          if (isPromise(result)) {
+            result.then((resultSt) => {
+              if (typeof resultSt === 'function') {
+                this.emit(resultSt).then((v) => {
+                  this.continue$.next({result: v, queue: nextQueue});
+                });
+                return;
+              }
+              if (Array.isArray(resultSt)) {
+                this.emit(resultSt).then((v) => {
+                  this.continue$.next({result: v, queue: nextQueue});
+                });
+                return;
+              }
+              this.continue$.next({result: resultSt, queue: nextQueue});
+            });
+            return;
+          }
+          this.continue$.next({result: result, queue: nextQueue});
+        });
+
+        return actionQueue;
       });
 
-      return actionQueue;
+      this.begin$.next(queueStack[0]);
     });
-
-    this.begin.next(queueStack[0]);
   }
 
   beginSubscribe(observer) {
-    this.begin.subscribe((actionQueue) => {
+    this.begin$.subscribe((actionQueue) => {
       observer(actionQueue);
     });
   }
 
   continueSubscribe(observer) {
-    this.continue.subscribe((resultState) => {
+    this.continue$.subscribe((resultState) => {
       observer(resultState);
     });
   }
 
   completeSubscribe(observer) {
-    this.complete.subscribe((resultState) => {
+    this.complete$.subscribe((resultState) => {
       observer(resultState);
     });
   }
@@ -162,19 +167,31 @@ dispatcher.emit((st) => {
   });
 });
 
-dispatcher.emit((_) => {
-  return delayed((apply) => {
-    console.log(50);
-    const value = 3;
-    setTimeout(() => {
-      console.log(60);
-      apply((st) => {
-        console.log(65);
-        return {c: st.c / value}
-      });
-    }, 1000);
-  });
-});
+dispatcher.emitAll([
+  (_) => {
+    return delayed((apply) => {
+      console.log(50);
+      const value = 3;
+      setTimeout(() => {
+        console.log(60);
+        apply([
+          (st) => {
+            console.log(65);
+            return {c: st.c / value}
+          },
+          (st) => {
+            console.log(67);
+            return {c: st.c + 5}
+          }
+        ]);
+      }, 1000);
+    });
+  },
+  (st) => {
+    console.log(69);
+    return {c: st.c / 2}
+  }
+]);
 dispatcher.emit((st) => {
   return new Promise((resolve) => {
     console.log(70);
