@@ -7,7 +7,7 @@ const state = {
   c: 1
 };
 
-function lazy(argFunc) {
+function delayed(argFunc) {
   return new Promise(argFunc);
 }
 
@@ -162,13 +162,14 @@ dispatcher.emit((st) => {
   });
 });
 
-dispatcher.emit((st) => {
-  return lazy((call) => {
+dispatcher.emit((_) => {
+  return delayed((apply) => {
     console.log(50);
+    const value = 3;
     setTimeout(() => {
       console.log(60);
-      const value = 3;
-      call((st) => {
+      apply((st) => {
+        console.log(65);
         return {c: st.c / value}
       });
     }, 1000);
