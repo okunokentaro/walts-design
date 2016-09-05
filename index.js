@@ -27,13 +27,21 @@ class Dispatcher {
   }
 
   emit(action) {
-    if (isActions(action)) {
-      return this.emitAll(action);
-    }
-    return this.emitAll([action]);
+    this.emitImpl(action);
   }
 
-  emitAll(actions) {
+  emitImpl(action) {
+    if (isActions(action)) {
+      return this.emitAllImpl(action);
+    }
+    return this.emitAllImpl([action]);
+  }
+
+  emitAll(action) {
+    this.emitAllImpl(action);
+  }
+
+  emitAllImpl(actions) {
     return new Promise((resolve) => {
       const queueStack = actions.map((action, i) => {
         const actionQueue = new Subject();
@@ -46,13 +54,13 @@ class Dispatcher {
           if (isPromise(result)) {
             result.then((resultSt) => {
               if (typeof resultSt === 'function') {
-                this.emit(resultSt).then((v) => {
+                this.emitImpl(resultSt).then((v) => {
                   this.continue$.next({result: v, queue: nextQueue});
                 });
                 return;
               }
               if (Array.isArray(resultSt)) {
-                this.emit(resultSt).then((v) => {
+                this.emitAllImpl(resultSt).then((v) => {
                   this.continue$.next({result: v, queue: nextQueue});
                 });
                 return;
@@ -148,59 +156,38 @@ console.log(2);
 //   }
 // ]);
 
-dispatcher.emit((st) => {
-  return new Promise((resolve) => {
-    console.log(10);
-    setTimeout(() => {
-      console.log(20);
-      resolve({a: st.a + 1});
-    }, 1000);
-  });
-});
-dispatcher.emit((st) => {
-  return new Promise((resolve) => {
-    console.log(30);
-    setTimeout(() => {
-      console.log(40);
-      resolve({a: st.a + 1});
-    }, 500);
-  });
-});
-
 dispatcher.emitAll([
-  (_) => {
+  // new Promise((resolve) => {
+  //   setTimeout(() => {
+  //     resolve((st) => {
+  //       return {
+  //         a: st.a + 1
+  //       };
+  //     });
+  //   }, 500)
+  // }),
+  (st) => {
+    console.log(20);
     return delayed((apply) => {
-      console.log(50);
-      const value = 3;
+      console.log(30);
       setTimeout(() => {
-        console.log(60);
-        apply([
-          (st) => {
-            console.log(65);
-            return {c: st.c / value}
-          },
-          (st) => {
-            console.log(67);
-            return {c: st.c + 5}
-          }
-        ]);
-      }, 1000);
+        console.log(40);
+        apply((st) => {
+          console.log(50);
+          return {
+            a: st.a + 1
+          };
+        })
+      }, 500);
     });
   },
   (st) => {
-    console.log(69);
-    return {c: st.c / 2}
-  }
+    console.log(60);
+    return {
+      a: st.a + 1
+    };
+  },
 ]);
-dispatcher.emit((st) => {
-  return new Promise((resolve) => {
-    console.log(70);
-    setTimeout(() => {
-      console.log(80);
-      resolve({c: st.c + 5});
-    }, 500);
-  });
-});
 
 //
 // console.log(3);
