@@ -27,56 +27,69 @@ class Dispatcher {
   }
 
   emit(action) {
-    this.emitImpl(action);
+    this.emitImpl(action, this.complete$);
   }
 
-  emitImpl(action) {
+  emitImpl(action, complete$) {
     if (isActions(action)) {
-      return this.emitAllImpl(action);
+      return this.emitAllImpl(action, complete$);
     }
-    return this.emitAllImpl([action]);
+    return this.emitAllImpl([action], complete$);
   }
 
   emitAll(action) {
-    this.emitAllImpl(action);
+    this.emitAllImpl(action, this.complete$);
   }
 
-  emitAllImpl(actions) {
-    return new Promise((resolve) => {
-      const queueStack = actions.map((action, i) => {
-        const actionQueue = new Subject();
-        actionQueue.subscribe((state) => {
-          const result = actions[i](state);
-          const nextQueue = queueStack[i + 1]
-            ? queueStack[i + 1]
-            : {next: (v) => { resolve(v); this.complete$.next(v); }}
-          ;
-          if (isPromise(result)) {
-            result.then((resultSt) => {
-              if (typeof resultSt === 'function') {
-                this.emitImpl(resultSt).then((v) => {
-                  this.continue$.next({result: v, queue: nextQueue});
-                });
-                return;
-              }
-              if (Array.isArray(resultSt)) {
-                this.emitAllImpl(resultSt).then((v) => {
-                  this.continue$.next({result: v, queue: nextQueue});
-                });
-                return;
-              }
-              this.continue$.next({result: resultSt, queue: nextQueue});
+  emitAllImpl(actions, complete$) {
+    const promise = new Promise((resolve) => {
+      const queueStack = actions.map((_) => {
+        return new Subject();
+      });
+
+      queueStack.forEach((queue, i) => {
+        const action = actions[i];
+        const nextQueue = queueStack[i + 1]
+          ? queueStack[i + 1]
+          : {next: (v) => { resolve(v); if (complete$) { complete$.next(v); }}}
+        ;
+
+        queue.subscribe((state) => {
+          if (isPromise(action)) {
+            console.warn('Use of Promise is deprecated. Please use the delayed() instead.');
+            action.then((thenAction) => {
+              const result = thenAction(state);
+              this.continueNext(result, nextQueue)
             });
             return;
           }
-          this.continue$.next({result: result, queue: nextQueue});
+          const result = action(state);
+          isPromise(result)
+            ? this.whenPromise(result, nextQueue)
+            : this.continueNext(result, nextQueue)
+          ;
         });
-
-        return actionQueue;
       });
 
       this.begin$.next(queueStack[0]);
     });
+    return promise;
+  }
+
+  whenPromise(result, nextQueue) {
+    result.then((resultSt) => {
+      if (typeof resultSt === 'function') {
+        return this.emitImpl(resultSt).then((v) => this.continueNext(v, nextQueue));
+      }
+      if (Array.isArray(resultSt)) {
+        return this.emitAllImpl(resultSt).then((v) => this.continueNext(v, nextQueue));
+      }
+      this.continueNext(resultSt, nextQueue);
+    });
+  }
+
+  continueNext(result, queue) {
+    this.continue$.next({result, queue});
   }
 
   beginSubscribe(observer) {
@@ -128,14 +141,7 @@ const dispatcher = new Dispatcher();
 const store = new Store(dispatcher);
 store.observable.subscribe(s => console.log(s));
 
-// console.log(1);
-// dispatcher.emit((st) => {
-//   return new Promise((resolve) => {
-//     resolve({a: st.a + 10});
-//   });
-// });
-
-console.log(2);
+console.log(1);
 // dispatcher.emitAll([
 //   (st) => {
 //     console.log(10);
@@ -158,12 +164,16 @@ console.log(2);
 
 dispatcher.emitAll([
   // new Promise((resolve) => {
+  //   console.log(2);
   //   setTimeout(() => {
+  //     console.log(4);
   //     resolve((st) => {
+  //       console.log(6);
   //       return {
   //         a: st.a + 1
   //       };
   //     });
+  //     console.log(8);
   //   }, 500)
   // }),
   (st) => {
@@ -188,6 +198,11 @@ dispatcher.emitAll([
     };
   },
 ]);
+
+dispatcher.emit((st) => {
+  return {a: st.a * 10};
+});
+
 
 //
 // console.log(3);
