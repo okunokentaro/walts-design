@@ -21,7 +21,7 @@ function isPromise(v) {
 
 class Dispatcher {
   constructor() {
-    this.begin$ = new Subject();
+    this.begin$    = new Subject();
     this.continue$ = new Subject();
     this.complete$ = new Subject();
   }
@@ -43,48 +43,48 @@ class Dispatcher {
 
   emitAllImpl(actions, complete$) {
     const promise = new Promise((resolve) => {
-      const queueStack = actions.map((_) => {
-        return new Subject();
-      });
+      const queueStack = actions.map((_) => new Subject());
 
       queueStack.forEach((queue, i) => {
-        const action = actions[i];
+        const action    = actions[i];
         const nextQueue = queueStack[i + 1]
           ? queueStack[i + 1]
-          : {next: (v) => { resolve(v); if (complete$) { complete$.next(v); }}}
-        ;
+          : {next: (v) => { resolve(v); if (complete$) { complete$.next(v); }}};
 
         queue.subscribe((state) => {
           if (isPromise(action)) {
-            console.warn('Use of Promise is deprecated. Please use the delayed() instead.');
-            action.then((thenAction) => {
-              const result = thenAction(state);
-              this.continueNext(result, nextQueue)
+            console.warn('Use of promise is deprecated. Please use the delayed() instead.');
+            action.then((_action) => {
+              const result = _action(state);
+              this.continueNext(result, nextQueue);
             });
             return;
           }
+
           const result = action(state);
           isPromise(result)
             ? this.whenPromise(result, nextQueue)
-            : this.continueNext(result, nextQueue)
-          ;
+            : this.continueNext(result, nextQueue);
         });
       });
 
       this.begin$.next(queueStack[0]);
     });
+
     return promise;
   }
 
   whenPromise(result, nextQueue) {
-    result.then((resultSt) => {
-      if (typeof resultSt === 'function') {
-        return this.emitImpl(resultSt).then((v) => this.continueNext(v, nextQueue));
+    result.then((value) => {
+      if (typeof value === 'function') {
+        const action = value;
+        return this.emitImpl(action).then((v) => this.continueNext(v, nextQueue));
       }
-      if (Array.isArray(resultSt)) {
-        return this.emitAllImpl(resultSt).then((v) => this.continueNext(v, nextQueue));
+      if (Array.isArray(value)) {
+        const actions = value;
+        return this.emitAllImpl(actions).then((v) => this.continueNext(v, nextQueue));
       }
-      this.continueNext(resultSt, nextQueue);
+      this.continueNext(value, nextQueue);
     });
   }
 
