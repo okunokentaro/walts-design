@@ -225,3 +225,36 @@ dispatcher.emit((st) => {
 // dispatcher.emit((st) => {
 //   return {a: st.a + 1};
 // });
+
+/**
+ * Pattern
+ */
+const syncAction = (st) => {
+  return {
+    a: 1
+  };
+};
+
+dispatcher.emit(syncAction);
+
+const asyncAction = new Promise((resolve) => {
+  resolve((st) => {
+    return {
+      a: 1
+    };
+  });
+});
+
+dispatcher.emit(asyncAction);
+
+const delayedAction = (st) => {
+  return delayed((apply) => {
+    apply((st) => {
+      return {
+        a: 1
+      };
+    });
+  });
+};
+
+dispatcher.emit(delayedAction);
